@@ -231,7 +231,7 @@ footer li { margin-bottom: 7px; }
       <tr><td><strong>ASR</strong> / STT</td><td>Automatic speech recognition, also called speech-to-text. Audio in, raw words out. Stage 2, and Wispr trains its own.</td></tr>
       <tr><td><strong>LLM</strong></td><td>Large language model. Here, a fine-tuned Llama that rewrites the raw transcript into clean, app-appropriate text. Stage 3.</td></tr>
       <tr><td><strong>TTS</strong></td><td>Text-to-speech, the reverse direction. Deliberately absent. Flow never speaks back.</td></tr>
-      <tr><td><strong>P50 / P90 / P99</strong></td><td>Percentiles. P50 is the median request, P99 is the worst one in a hundred. Users judge a tool by its worst moment, so Wispr engineers against the tail.</td></tr>
+      <tr><td><strong>P50 / P90 / P99</strong></td><td>Percentiles. P50 is the median request, P90 the worst one in ten, P99 the worst one in a hundred. Wispr measures these per user rather than across all requests, so no one's bad experience gets averaged away: "We measure latency on a p90 or p99 basis for each user; we don't care at all about p50." <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a></td></tr>
       <tr><td><strong>Zero edit rate</strong></td><td>The fraction of dictations that need no correction at all. The metric that replaces word error rate.</td></tr>
     </table>
   </div>
@@ -248,7 +248,7 @@ footer li { margin-bottom: 7px; }
   </div>
 
   <div class="callout good">
-    <strong>Why the worst case and not the average.</strong> Users judge a tool by its worst moment, not its typical one. When people report Flow "feels slow," the team looks at the distribution and almost always finds one or two outliers driving the whole impression. A product that is fast 98 percent of the time still feels unreliable, and unreliable kills the habit. The budget is a soft target on the P50 and P99 distributions rather than a per-request guarantee, because model workloads are inherently variable. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a>
+    <strong>Why the worst case and not the average.</strong> Users judge a tool by its worst moment, not its typical one. When people report Flow "feels slow," the team looks at the distribution and almost always finds one or two outliers driving the whole impression. A product that is fast 98 percent of the time still feels unreliable, and unreliable kills the habit. The budgets are soft targets on distributions rather than per-request guarantees, because model workloads are inherently variable, and the engineering attention lives at the tail. Sahaj's own summary of the doctrine: "We're optimizing the p99 experience for the p99 user." <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a> <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a>
   </div>
 
   <h2>Stage by stage</h2>

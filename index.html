@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wispr Flow: the dictation pipeline</title>
+<style>
+:root {
+  --bg: #ffffff; --surface: #faf9f7; --card: #ffffff;
+  --text: #1a1a19; --text-2: #5f5e5a; --text-3: #8a8983;
+  --border: #e7e5df; --border-2: #d3d1c7;
+  --accent-bg: #EEEDFE; --accent-text: #3C3489; --accent-border: #AFA9EC; --accent-mid: #7F77DD;
+  --warn-bg: #FAEEDA; --warn-text: #854F0B; --warn-border: #EF9F27;
+  --bad-bg: #FCEBEB; --bad-text: #A32D2D; --bad-border: #F09595;
+  --good-bg: #E1F5EE; --good-text: #0F6E56; --good-border: #5DCAA5;
+  --code-bg: #f4f2ed;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a19; --surface: #232322; --card: #232322;
+    --text: #f0efec; --text-2: #a8a79f; --text-3: #7a7973;
+    --border: #34342f; --border-2: #45453f;
+    --accent-bg: #26215C; --accent-text: #CECBF6; --accent-border: #534AB7; --accent-mid: #7F77DD;
+    --warn-bg: #412402; --warn-text: #FAC775; --warn-border: #854F0B;
+    --bad-bg: #501313; --bad-text: #F7C1C1; --bad-border: #A32D2D;
+    --good-bg: #04342C; --good-text: #9FE1CB; --good-border: #0F6E56;
+    --code-bg: #2c2c2a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 3rem 1.5rem 5rem; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.7; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 760px; margin: 0 auto; }
+h1 { font-size: 26px; font-weight: 500; margin: 0 0 6px; letter-spacing: -0.015em; }
+h2 { font-size: 19px; font-weight: 500; margin: 3.5rem 0 4px; letter-spacing: -0.01em; }
+h3 { font-size: 16px; font-weight: 500; margin: 2rem 0 8px; }
+h2, h3 { scroll-margin-top: 1.5rem; }
+h2:target, h3:target { color: var(--accent-text); }
+.sub { font-size: 15px; color: var(--text-2); margin: 0 0 2.5rem; }
+.lede { font-size: 14.5px; color: var(--text-2); margin: 0 0 1.25rem; }
+.hint { font-size: 13px; color: var(--text-3); margin: 0 0 10px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em;
+  background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
+
+.journey { background: var(--card); border: 0.5px solid var(--border); border-radius: 12px; padding: 1.25rem 1.25rem 1rem; margin: 0 0 2.5rem; }
+.j-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.j-title { font-size: 15px; font-weight: 500; margin: 0; }
+#play {
+  cursor: pointer; font-family: inherit; font-size: 13.5px; padding: 7px 16px;
+  border-radius: 8px; border: 0.5px solid var(--accent-border);
+  background: var(--accent-bg); color: var(--accent-text);
+}
+#play:hover { filter: brightness(0.97); }
+.spd { display: flex; gap: 4px; align-items: center; }
+.spd .spd-label { font-size: 12px; color: var(--text-3); margin-right: 2px; }
+.spd button { cursor: pointer; font-family: inherit; font-size: 12px; padding: 5px 10px;
+  border-radius: 8px; border: 0.5px solid var(--border-2); background: transparent; color: var(--text-2); }
+.spd button.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent-border); }
+#j-cap { font-size: 14px; color: var(--text-2); margin: 8px 0 0; min-height: 44px; line-height: 1.55; }
+.svg-lane-label { font-size: 11px; fill: var(--text-3); }
+.svg-station-label { font-size: 11px; fill: var(--text-3); }
+.svg-box-label { font-size: 11px; fill: var(--accent-text); }
+.svg-timer { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--accent-text); }
+
+#stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 620px) {
+  #stages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body { padding: 2rem 1rem 4rem; }
+  .journey { overflow-x: auto; }
+  .journey svg { min-width: 560px; }
+  .timeline { overflow-x: auto; padding-bottom: 4px; }
+  .tl-row, .tl-brackets { min-width: 500px; }
+}
+#stages button {
+  display: block; width: 100%; text-align: left; cursor: pointer; padding: 10px 8px;
+  line-height: 1.3; border-radius: 8px; border: 0.5px solid var(--border-2);
+  background: transparent; color: var(--text); font-family: inherit;
+  transition: background .12s, border-color .12s;
+}
+#stages button:hover { background: var(--surface); }
+#stages button .n { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 3px; }
+#stages button .k { display: block; font-size: 13px; }
+.dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; vertical-align: 1px; margin-right: 5px; }
+.legend { display: flex; gap: 18px; margin: 12px 0 0; font-size: 12px; color: var(--text-3); flex-wrap: wrap; }
+.legend .dot { width: 8px; height: 8px; }
+
+.card { background: var(--card); border: 0.5px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem; margin: 1.25rem 0 0; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 4px; }
+#d-title { font-size: 17px; font-weight: 500; margin: 0; }
+#d-time { font-size: 12px; color: var(--accent-text); background: var(--accent-bg); padding: 3px 10px; border-radius: 8px; white-space: nowrap; }
+#d-where { font-size: 13px; color: var(--text-3); margin: 0 0 14px; }
+#d-body { font-size: 15px; margin: 0; }
+#d-note { font-size: 13.5px; line-height: 1.65; color: var(--text-2); margin: 14px 0 0; padding-top: 14px; border-top: 0.5px solid var(--border); }
+
+.callout { background: var(--warn-bg); color: var(--warn-text); border-radius: 10px; padding: 1rem 1.25rem; margin: 1.5rem 0; font-size: 14.5px; }
+.callout strong { font-weight: 500; }
+.callout.bad { background: var(--bad-bg); color: var(--bad-text); }
+.callout.good { background: var(--good-bg); color: var(--good-text); }
+
+.timeline { margin: 1.5rem 0 0; }
+.tl-row { display: flex; gap: 3px; align-items: stretch; }
+.tl-box { border-radius: 6px; padding: 8px 6px; font-size: 12px; text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface); border: 0.5px solid var(--border-2); color: var(--text-2); }
+.tl-box.lit { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
+.tl-brackets { display: flex; gap: 3px; margin-top: 6px; }
+.tl-bracket { font-size: 11px; color: var(--text-3); text-align: center; border-top: 0.5px solid var(--border-2); padding-top: 5px; }
+.tl-bracket.acc { color: var(--accent-text); border-top-color: var(--accent-border); }
+
+details { border: 0.5px solid var(--border); border-radius: 10px; margin: 8px 0 0; background: var(--card); }
+details[open] { border-color: var(--border-2); }
+summary { cursor: pointer; padding: 12px 16px; font-size: 15px; list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--text-3); font-size: 17px; line-height: 1; }
+details[open] summary::after { content: "\2013"; }
+summary:hover { background: var(--surface); border-radius: 10px; }
+.det-body { padding: 0 16px 16px; font-size: 14.5px; color: var(--text-2); }
+.det-body p { margin: 0 0 12px; }
+.det-body p:last-child { margin-bottom: 0; }
+.det-body strong { color: var(--text); font-weight: 500; }
+.det-body ol, .det-body ul { margin: 0 0 12px; padding-left: 20px; }
+.det-body li { margin-bottom: 8px; }
+a.src { display: inline-block; font-size: 11px; background: var(--surface); border: 0.5px solid var(--border-2);
+  color: var(--text-3); padding: 1px 7px; border-radius: 20px; margin-left: 6px; vertical-align: 1px;
+  white-space: nowrap; text-decoration: none; }
+a.src:hover { color: var(--accent-text); border-color: var(--accent-border); }
+
+.stage-block { margin: 2rem 0 0; padding-top: 1.5rem; border-top: 0.5px solid var(--border); }
+.stage-block:first-of-type { border-top: none; padding-top: 0; }
+.stage-tech { font-size: 12.5px; color: var(--text-3); margin: 0 0 10px; }
+
+#budget { display: flex; gap: 3px; height: 46px; }
+#budget div { border-radius: 8px; background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--text-2); transition: background .12s, color .12s; }
+#budget div.open { background: transparent; border: 0.5px dashed var(--border-2); color: var(--text-3); }
+#budget-labels { display: flex; gap: 3px; margin-top: 6px; }
+#budget-labels div { font-size: 11px; color: var(--text-3); text-align: center; line-height: 1.4; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 4px; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--text-3); padding: 0 10px 8px 0; border-bottom: 0.5px solid var(--border); }
+td { padding: 10px 10px 10px 0; border-bottom: 0.5px solid var(--border); vertical-align: top; color: var(--text-2); }
+td:first-child { color: var(--text); }
+a { color: var(--accent-text); text-decoration: none; border-bottom: 0.5px solid var(--accent-border); }
+a:hover { border-bottom-color: var(--accent-text); }
+a.src { border-bottom: 0.5px solid var(--border-2); }
+footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 0.5px solid var(--border); font-size: 13px; color: var(--text-3); }
+footer li { margin-bottom: 7px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Wispr Flow: the dictation pipeline</h1>
+  <p class="sub">What happens, technically, between the decision to invoke Flow and your words landing in the app.</p>
+
+  <div class="journey">
+    <div class="j-head">
+      <p class="j-title">The journey of one sentence</p>
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <div class="spd">
+          <span class="spd-label">Speed</span>
+          <button data-s="1" class="on">1&times;</button>
+          <button data-s="0.5">&frac12;&times;</button>
+          <button data-s="0.25">&frac14;&times;</button>
+        </div>
+        <button id="play">Play</button>
+      </div>
+    </div>
+    <svg width="100%" viewBox="0 0 680 240" role="img" aria-label="Animated map of a dictation traveling from the decision to invoke, through the microphone, up to Wispr's servers, through the speech and language models, and back into the app.">
+      <text x="4" y="22" class="svg-lane-label">Your machine</text>
+      <rect x="0" y="30" width="680" height="62" rx="10" fill="var(--surface)"></rect>
+      <text x="4" y="124" class="svg-lane-label">Wispr servers</text>
+      <rect x="0" y="130" width="680" height="62" rx="10" fill="var(--surface)"></rect>
+
+      <path d="M55,60 L255,60 L330,160 L560,160 L625,60" fill="none" stroke="var(--border-2)" stroke-width="1" stroke-dasharray="3,4"></path>
+
+      <circle cx="55" cy="60" r="6" fill="none" stroke="var(--border-2)" stroke-width="1.5" stroke-dasharray="2,3"></circle>
+      <circle cx="135" cy="60" r="4" fill="var(--border-2)"></circle>
+      <circle cx="205" cy="60" r="4" fill="var(--border-2)"></circle>
+      <circle cx="330" cy="160" r="4" fill="var(--accent-border)"></circle>
+      <circle cx="625" cy="60" r="4" fill="var(--border-2)"></circle>
+
+      <rect x="380" y="140" width="80" height="40" rx="8" fill="var(--accent-bg)" stroke="var(--accent-border)" stroke-width="0.5"></rect>
+      <text x="420" y="164" text-anchor="middle" class="svg-box-label">ASR</text>
+      <rect x="480" y="140" width="88" height="40" rx="8" fill="var(--accent-bg)" stroke="var(--accent-border)" stroke-width="0.5"></rect>
+      <text x="524" y="164" text-anchor="middle" class="svg-box-label">LLM</text>
+      <text x="420" y="210" text-anchor="middle" class="svg-station-label">speech to text</text>
+      <text x="524" y="210" text-anchor="middle" class="svg-station-label">transcript cleanup</text>
+
+      <text x="55" y="86" text-anchor="middle" class="svg-station-label">invoke</text>
+      <text x="135" y="86" text-anchor="middle" class="svg-station-label">fn key</text>
+      <text x="205" y="86" text-anchor="middle" class="svg-station-label">mic on</text>
+      <text x="625" y="86" text-anchor="middle" class="svg-station-label">text lands</text>
+      <text x="330" y="210" text-anchor="middle" class="svg-station-label">auth + route</text>
+
+      <text id="j-timer" x="672" y="212" text-anchor="end" class="svg-timer" style="opacity:0">0 ms</text>
+
+      <circle id="c0" r="3" fill="var(--accent-mid)" opacity="0"></circle>
+      <circle id="c1" r="3" fill="var(--accent-mid)" opacity="0"></circle>
+      <circle id="c2" r="3" fill="var(--accent-mid)" opacity="0"></circle>
+      <circle id="c3" r="3" fill="var(--accent-mid)" opacity="0"></circle>
+      <circle id="pulse" cx="55" cy="60" r="6" fill="var(--accent-mid)" opacity="0"></circle>
+    </svg>
+    <p id="j-cap">Press play to watch one sentence make the full trip: the decision to invoke, the keypress, the stream up to the servers while you are still talking, the two models, and the landing back at your cursor.</p>
+  </div>
+
+  <p class="hint">Click a stage.</p>
+  <div id="stages"></div>
+
+  <div class="legend">
+    <span><span class="dot" style="background: var(--border-2);"></span>On your machine</span>
+    <span><span class="dot" style="background: var(--accent-border);"></span>On the server</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <p id="d-title">Stage 0: the decision to invoke</p>
+      <span id="d-time">Never measured</span>
+    </div>
+    <p id="d-where">Happens in your head, before any code runs</p>
+    <p id="d-body">Nothing starts until the user decides to invoke Flow and reaches for the hotkey. If past experience taught them the tool is slow or clips their first words, they hesitate and type instead.</p>
+    <p id="d-note">Wispr names this problem themselves: habit formation is one of the eleven open problems on their engineering blog.</p>
+  </div>
+
+  <div class="card" style="padding: 1rem 1.5rem;">
+    <p style="font-size: 13px; color: var(--text-3); margin: 0 0 10px;">The vocabulary</p>
+    <table>
+      <tr><th>Term</th><th>What it means here</th></tr>
+      <tr><td><strong>Invoke</strong></td><td>The act of activating Flow: deciding to speak and pressing the hotkey. Time-to-invoke is the gap between wanting to say something and the system actually listening.</td></tr>
+      <tr><td><strong>ASR</strong> / STT</td><td>Automatic speech recognition, also called speech-to-text. Audio in, raw words out. Stage 2, and Wispr trains its own.</td></tr>
+      <tr><td><strong>LLM</strong></td><td>Large language model. Here, a fine-tuned Llama that rewrites the raw transcript into clean, app-appropriate text. Stage 3.</td></tr>
+      <tr><td><strong>TTS</strong></td><td>Text-to-speech, the reverse direction. Deliberately absent. Flow never speaks back.</td></tr>
+      <tr><td><strong>P50 / P90 / P99</strong></td><td>Percentiles. P50 is the median request, P99 is the worst one in a hundred. Users judge a tool by its worst moment, so Wispr engineers against the tail.</td></tr>
+      <tr><td><strong>Zero edit rate</strong></td><td>The fraction of dictations that need no correction at all. The metric that replaces word error rate.</td></tr>
+    </table>
+  </div>
+
+  <h2 id="budget-sec">The 700ms budget</h2>
+  <p class="lede">Measured from the moment you stop speaking. The figures are Sahaj Garg's, from Wispr's engineering blog. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering, Sep 2025</a></p>
+  <div id="budget"></div>
+  <div id="budget-labels"></div>
+
+  <p class="hint" style="margin-top:10px">The LLM figure varies by source: under 200ms on Wispr's blog, 250ms for 100 tokens in the <a href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten case study</a> and on <a href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio</a>. Read it as roughly 200 to 250ms.</p>
+
+  <div class="callout">
+    <strong>The parts do not fill the whole.</strong> The three ceilings sum to 600ms against the 700ms target, and no published source itemizes the remainder. These are separate engineering requirements rather than an allocation: "a maximum networking budget of 200ms" most naturally covers the full network round trip. The unclaimed margin is headroom in a system whose workloads are inherently variable.
+  </div>
+
+  <div class="callout good">
+    <strong>Why the worst case and not the average.</strong> Users judge a tool by its worst moment, not its typical one. When people report Flow "feels slow," the team looks at the distribution and almost always finds one or two outliers driving the whole impression. A product that is fast 98 percent of the time still feels unreliable, and unreliable kills the habit. The budget is a soft target on the P50 and P99 distributions rather than a per-request guarantee, because model workloads are inherently variable. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a>
+  </div>
+
+  <h2>Stage by stage</h2>
+  <p class="lede">Each stage carries what happens, the engineering underneath it, and how it fails. Expand what you need.</p>
+
+  <div class="stage-block">
+    <h3 id="stage-0">Stage 0: the decision to invoke</h3>
+    <p class="stage-tech">Cognitive, not technical. Invisible to telemetry.</p>
+
+    <details>
+      <summary>What actually happens</summary>
+      <div class="det-body">
+        <p>Before a single line of code executes, the user decides whether this thought is worth invoking Flow for. That decision is made from memory: how well did it go last time, did it clip the first words, did the output need fixing.</p>
+        <p>Sahaj defines latency as the elapsed time from when a user tries to do something to when they experience the response. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a> Under that definition, hesitation before the keypress is latency. It just does not appear on any dashboard, because measurement starts at the keypress.</p>
+        <p><strong>Time-to-invoke</strong> is the name for this gap: the distance between wanting to say something and the system actually listening. It sits upstream of time-to-send, the metric the pipeline is engineered against, and it is the gap that decides whether the pipeline gets used at all.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why it matters to the product</summary>
+      <div class="det-body">
+        <p>Habit formation is one of the eleven open problems on Wispr's engineering blog: teaching a broader audience to speak rather than type requires UX and design innovation to build a sustained voice habit. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering</a></p>
+        <p>The connection to this stage: every bad experience downstream, a clipped opening, a slow outlier, a wrong transcription, gets paid for here, as hesitation on the next invoke. A user who has been burned develops a reflex to type instead, precisely in the high-urgency moments where voice input is most valuable. The habit that makes Flow sticky, users dictating 72 percent of their characters after six months, is built or broken at this stage.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage-block">
+    <h3 id="stage-1">Stage 1: the microphone wakes up</h3>
+    <p class="stage-tech">Local. macOS Core Audio. Variable by hardware setup.</p>
+
+    <details>
+      <summary>What actually happens</summary>
+      <div class="det-body">
+        <p>On the keypress, the client has to resolve the audio environment before it can capture anything: identify the active input device, negotiate with Core Audio, confirm sample rate and routing, and establish a clean stream. Missing opening words is a common enough outcome that the help center has a dedicated article on it. <a class="src" href="https://docs.wisprflow.ai/articles/3566082841-fix-missing-first-words-in-transcriptions">Wispr help center</a></p>
+        <p>On a built-in laptop microphone this is close to instant. The more hardware sits between the speaker and the system, the longer and less consistent the negotiation: Bluetooth headsets renegotiating their audio profile, external USB or XLR interfaces, virtual audio devices, or multi-input setups where the wrong device can win the selection. If the stream is not fully ready when speech starts, the opening syllables are simply not captured.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why quality fluctuates: the audio, not the model</summary>
+      <div class="det-body">
+        <p>Sahaj wrote an entire post on this, and its thesis is the single most useful sentence in Flow debugging: <strong>"It's rarely the model itself. Much more often, it's a change in the audio."</strong> <a class="src" href="https://wisprflow.ai/post/transcription-quality">Wispr engineering, Jan 2026</a></p>
+        <p>His named causes, all of which live in this stage:</p>
+        <ul>
+          <li><strong>Microphone changes.</strong> "Bluetooth mics like AirPods often have worse audio quality and can clip the beginning or end of speech."</li>
+          <li><strong>Phantom pairing.</strong> "Sometimes, bluetooth headphones can pair even when they're in your pocket. There's basically no audio."</li>
+          <li><strong>System settings.</strong> One of Wispr's longest internal "the model is broken" scares turned out to be a macOS microphone input volume set too low.</li>
+          <li><strong>Environment.</strong> Background noise or nearby conversations can be picked up as unintended speech.</li>
+          <li><strong>Comfort drift.</strong> As people get used to Flow, they mumble more, speak more quietly, and dictate half-awake or lying down. The audio degrades because trust went up.</li>
+        </ul>
+        <p>The last one is worth sitting with: it means transcription quality can decline <em>because the product is working</em>. A complaint of "it got worse over time" can be the user's own speech relaxing, not a regression.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The built-in isolator: listen to the audio</summary>
+      <div class="det-body">
+        <p>Flow's history keeps the recorded audio of each dictation, and Wispr's own guidance is to download and listen to it when quality drops. <a class="src" href="https://wisprflow.ai/post/transcription-quality">Wispr engineering</a></p>
+        <p>This is the cleanest diagnostic in the whole pipeline, because it splits stage 1 from stage 2 with one action. If the recording sounds clipped, quiet, or empty, the problem is capture: this stage. If the recording sounds fine and the text is still wrong, the problem is downstream in the models. One listen eliminates half the system.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage-block">
+    <h3 id="stage-15">Stage 1.5: the trip to the server</h3>
+    <p class="stage-tech">Network and infrastructure. Runs while you are still talking.</p>
+
+    <div class="callout">
+      <strong>Correct the mental model first.</strong> Your audio does not sit on your laptop waiting for you to finish. The connection opens and audio flows up in small chunks while you are mid-sentence, so by the time you stop speaking, the server already holds nearly all of it. That is why the 700ms budget starts when you <em>stop</em>: the upload was paid underneath your sentence, and what remains is the final chunk, the model work, and the return trip. Whether the ASR transcribes incrementally during speech or in one fast pass at commit is not publicly documented; either way, the under-200ms ceiling covers whatever transcription work remains once you stop.
+    </div>
+
+    <div class="timeline">
+      <div class="tl-row">
+        <div class="tl-box" style="flex:1.1">open</div>
+        <div class="tl-box" style="flex:1.1">auth</div>
+        <div class="tl-box" style="flex:1.4">append</div>
+        <div class="tl-box" style="flex:1.4">append</div>
+        <div class="tl-box" style="flex:1.4">append</div>
+        <div class="tl-box" style="flex:1.4">append</div>
+        <div class="tl-box lit" style="flex:1.3">commit</div>
+        <div class="tl-box lit" style="flex:2.5">result</div>
+      </div>
+      <div class="tl-brackets">
+        <div class="tl-bracket" style="flex:7.8">You are still speaking. This time is free.</div>
+        <div class="tl-bracket acc" style="flex:3.8">The 700ms budget</div>
+      </div>
+    </div>
+
+    <details style="margin-top:1.25rem">
+      <summary>The six things that happen before a model hears you</summary>
+      <div class="det-body">
+        <ol>
+          <li><strong>Address lookup.</strong> Hostname to server address. Normally cached and near-instant, but a cold lookup on a bad network is real time.</li>
+          <li><strong>Secure connection.</strong> A TLS handshake plus a WebSocket upgrade. A WebSocket is a pipe that stays open in both directions: pay the setup cost once, then push audio through continuously instead of making a fresh request per chunk.</li>
+          <li><strong>The <code>auth</code> message.</strong> Sent first. Carries the access token, plus language, app metadata, and conversation context. <a class="src" href="https://api-docs.wisprflow.ai/websocket_api">Wispr API docs</a> That context is not decoration: it is what lets the cleanup model know you are in Slack and not in an email.</li>
+          <li><strong>Region routing.</strong> Customer data stays inside US infrastructure, with model inference running on AWS through Baseten. <a class="src" href="https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq">Wispr security FAQ</a> <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a></li>
+          <li><strong>The <code>append</code> stream.</strong> Audio chunks flow up as you talk. Each carries a position number so the server can detect a dropped or out-of-order packet, plus a volume reading.</li>
+          <li><strong>The <code>commit</code> message.</strong> You stopped talking. It reports the total packet count so the server can confirm it received everything. This is the starting gun for the 700ms.</li>
+        </ol>
+        <p>One caveat: this protocol is documented for Wispr's developer platform, the API third parties build on. The desktop app very likely speaks the same or a closely related protocol, but that is not publicly confirmed.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>What is actually in the pipe</summary>
+      <div class="det-body">
+        <p>Audio is sent as <strong>single-channel 16-bit PCM at 16kHz</strong>, base64 encoded. <a class="src" href="https://api-docs.wisprflow.ai/websocket_api">Wispr API docs</a></p>
+        <p>Unpacked: one microphone channel, not stereo. 16,000 samples per second, which is plenty for speech since the human voice lives well below the 8kHz ceiling that rate gives you. Each sample is 2 bytes, so roughly 32KB of raw audio per second, about a quarter of a megabit. Trivially small. Bandwidth is not the constraint here, round trips are.</p>
+        <p>There is an option to switch the encoding to MessagePack, a compact binary format, to cut bandwidth further. Classic latency engineering: shrink the payload so the pipe drains faster on a weak connection.</p>
+        <p><strong>Chunks must be a consistent duration</strong> and positions must increment correctly. Break either rule and the server cannot reassemble the audio in order, which surfaces as dropped or garbled words that have nothing to do with the models.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>What the server decides once your audio lands</summary>
+      <div class="det-body">
+        <p><strong>Batch or run alone.</strong> A GPU is far more efficient processing several requests together. Waiting a beat for a second request raises throughput and lowers cost, but adds queue time to yours. This is the permanent tension in inference serving: one user's latency against everyone's efficiency.</p>
+        <p><strong>Request shape makes batching harder at scale.</strong> Sahaj's example: one request is a long input with a short output, another is the reverse. The GPU now has to do two different things at once, and the way it parallelizes changes. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p><strong>Is a GPU even warm.</strong> Inference autoscales and scales to zero when idle. <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a> Good for cost, but a request arriving at a cold moment pays a startup cost that a mid-traffic request does not. Exactly the kind of thing that lives in the P99 and never in the average.</p>
+        <p><strong>Orchestration.</strong> The speech model and the Llama cleanup model run as a multi-step chain using Baseten's Chains framework, with the Llama step compiled via TensorRT-LLM. <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>How this stage fails</summary>
+      <div class="det-body">
+        <table>
+          <tr><th>Failure</th><th>What the user experiences</th></tr>
+          <tr><td>Cross-region misroute</td><td>Everything feels sluggish at once, for a whole population. A deploy once put the speech model in California and the language model in the Midwest. Every response got 300 to 400ms slower while every individual component still looked fast. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></td></tr>
+          <tr><td>Cold start after idle</td><td>The first dictation after a quiet period lags, then everything is fine. Feels intermittent.</td></tr>
+          <tr><td>Weak upload</td><td>Chunks queue behind each other. You finish speaking and the pipeline is still catching up, so the wait feels far longer than 700ms.</td></tr>
+          <tr><td>Auth failure mid-session</td><td>No transcript at all, with nothing wrong in the audio.</td></tr>
+          <tr><td>Packet position mismatch</td><td>Words dropped or out of order. Reads as a transcription problem, is a transport problem.</td></tr>
+        </table>
+        <p style="margin-top:14px">The pattern worth carrying: this stage produces failures that <em>look</em> like model failures. A dropped chunk looks like the speech model mishearing. Isolating which stage broke matters more than guessing at causes.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage-block">
+    <h3 id="stage-2">Stage 2: the ASR model transcribes</h3>
+    <p class="stage-tech">First of two models. Budget: under 200ms. Wispr trains its own.</p>
+
+    <details>
+      <summary>What actually happens</summary>
+      <div class="det-body">
+        <p>The speech recognition model converts audio into raw text, handling accent, pace, and ambient noise. What comes out is faithful but messy: the ums, the false starts, the abandoned sentence are all still there.</p>
+        <p>This is a dedicated speech model, separate from the LLM that follows. The two run in sequence, not as a single pass, so their delays stack rather than overlap.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why transcription is inherently ambiguous</summary>
+      <div class="det-body">
+        <p>Wispr's research post makes an argument most people miss: industry word error rates improving from 3 percent to 2 percent have "hardly made a dent" on the hard cases, because <strong>the audio itself is inherently ambiguous</strong>. No amount of listening harder resolves it. <a class="src" href="https://wisprflow.ai/post/speech-recognition-challenges">Wispr engineering, Sep 2025</a></p>
+        <p>The named categories of ambiguity:</p>
+        <ul>
+          <li><strong>Phonetic ambiguity.</strong> In whispered speech, voiced and unvoiced sounds are acoustically identical.</li>
+          <li><strong>Homophones and short utterances.</strong> "Lauren" and "Laurent" are virtually indistinguishable by sound alone.</li>
+          <li><strong>Proper nouns.</strong> Getting a name or a podcast title right requires world knowledge, not better hearing.</li>
+          <li><strong>Domain vocabulary.</strong> Medical and legal terminology is underrepresented in training data.</li>
+          <li><strong>Accents.</strong> A strong accent can trick a model into thinking you switched languages entirely.</li>
+          <li><strong>Logical coherence.</strong> A pure acoustic model will happily output "gabapentin 903 times a day," which no human transcriber would ever write.</li>
+        </ul>
+        <p>The conclusion Wispr draws: transcription is not an audio problem, it is <strong>a context problem</strong>. Their ASR is conditioned on speaker qualities, surrounding context, and individual history, so the model resolves ambiguity the way a human assistant would, by knowing you. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering</a></p>
+        <p>This is also why very large custom dictionaries can <em>hurt</em> accuracy: every added term is another candidate the model must weigh on every utterance. <a class="src" href="https://wisprflow.ai/post/transcription-quality">Wispr engineering</a></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why the cloud and not your laptop</summary>
+      <div class="det-body">
+        <p>The industry trend is shrinking models onto the device. Sahaj describes that option and rejects it for this use case: you can quantize a small model onto Apple Silicon and it "will produce super fast responses but they won't be very good." <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p>The reasoning is a time calculation, in his words: "if the user has to go back and fix up their transcript or edit a mistake in the speech recognition, that experience is no longer better than typing."</p>
+        <p>A network trip costs milliseconds. A correction costs seconds of stopping, clicking, fixing, and finding your place. So Wispr spends the milliseconds and buys the accuracy, running large models in the cloud and training their own speech models.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>100+ languages, and code-switching</summary>
+      <div class="det-body">
+        <p>Flow supports over 100 languages, with seven at what Wispr calls English-level performance: French, German, Hindi, Italian, Portuguese, Spanish, and Thai. <a class="src" href="https://wisprflow.ai/post/supporting-languages">Wispr engineering, Jan 2026</a></p>
+        <p>The engineering behind that number:</p>
+        <ul>
+          <li><strong>Dynamic engine selection.</strong> Flow selects the most accurate ASR engine per language, which cut transcription error rates by more than half.</li>
+          <li><strong>Accent confidence scoring.</strong> Compares candidate transcriptions to prevent a strong accent from being misread as a different language.</li>
+          <li><strong>Code-switching support.</strong> Roughly half the world speaks more than one language day to day. Hinglish speakers blend Hindi and English in one sentence and prefer romanized script; Flow outputs romanized Hindi without switching scripts mid-sentence.</li>
+        </ul>
+        <p>Code-switching within a single utterance remains one of the eleven named open challenges, which is a useful calibration: shipped does not mean solved.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage-block">
+    <h3 id="stage-3">Stage 3: the LLM cleans it up</h3>
+    <p class="stage-tech">Second model. A fine-tuned Llama, compiled with TensorRT-LLM. Budget: roughly 200 to 250ms.</p>
+
+    <details>
+      <summary>What actually happens</summary>
+      <div class="det-body">
+        <p>A fine-tuned Llama takes the messy transcript and rewrites it into what you meant: punctuation, paragraph breaks, filler removed, restarts repaired. It also shapes output to the app you are in, using the context sent up in the auth message. <a class="src" href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten</a></p>
+        <p>The published performance target is <strong>100 or more tokens generated in under 250ms</strong>, measured at the tail.</p>
+        <p>Everything before this point is transcription. This step is interpretation, and it is what separates Flow from plain dictation.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The strict rule: output stays the size of input</summary>
+      <div class="det-body">
+        <p>Sahaj: "we're really careful to make sure that the responses that we produce are very similar size to the input. It's actually a very strict requirement that we have." <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p>The reason is not performance, it is authorship. People do not want the model "expanding on your behalf and deciding what you want to say on your behalf." The user must experience that they chose the words.</p>
+        <p>This is a product philosophy expressed as an engineering constraint, and it is the cleanest example in the system of the two being the same decision.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Short form versus long form</summary>
+      <div class="det-body">
+        <p><strong>Short messages</strong> like Slack and texts: filler words such as "like" and "though" are load-bearing. They carry tone. Stripping them makes the writer sound colder than they are, so they are preserved. The documented version of this: in supported messaging apps, Flow drops trailing periods for a more casual feel, tuned by the Writing Style setting. <a class="src" href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Wispr help center</a></p>
+        <p><strong>Long form</strong> like email: nobody speaks a precisely structured email for a minute straight. Here the model breaks text into paragraphs, structures it, and lightly edits, with the constraint that the user can still scan the output and confirm no meaning was lost. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p>Getting this wrong in either direction, over-editing a casual text or under-editing a rambling email, breaks the feeling that Flow understands you.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Speculative decoding, and what it bought</summary>
+      <div class="det-body">
+        <p>Normally a language model generates one token at a time, each pass feeding the next. For a cleanup task that is wasteful, because most of the output is identical to the input.</p>
+        <p>Speculative decoding guesses that the next stretch of output matches the input and verifies the guess in a single pass, dropping into normal generation only where an edit is actually needed. "We should, um, launch on Tuesday, wait no, Wednesday morning" keeps "We should launch on" verbatim and only generates the corrected ending.</p>
+        <p>This cut LLM latency <strong>by over half</strong>. The savings were not banked as speed: they "allowed us actually budget for running even more models as part of our workflow." <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p><strong>The principle:</strong> recovered milliseconds get reinvested in capability. The budget is a spending plan, not a description.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Personalization: learned on your machine</summary>
+      <div class="det-body">
+        <p>The models run in the cloud, but <strong>most personalization data must live on the user's device</strong>, for both privacy and latency. Wispr describes capturing edits locally, deciding whether an edit should generalize and in which contexts, and learning a local policy aligned to the user's style. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering</a></p>
+        <p>Why it is hard: writing style differs at the token level, in punctuation and capitalization habits, and language models have strong recall but poor precision for exactly that kind of nuance. The formatter also learns regional conventions from user edits, like French spacing before punctuation and German quotation marks. <a class="src" href="https://wisprflow.ai/post/supporting-languages">Wispr engineering</a></p>
+        <p>So the architecture is not cloud versus device. It is big models in the cloud, your profile on your machine.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>How this stage fails</summary>
+      <div class="det-body">
+        <p>Sahaj describes the pathologies directly: a model can go off the rails, start answering a different question, or repeat the same sentence indefinitely so the request never terminates. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+        <p>Three defenses he names: <strong>length safeguards</strong>, since knowing roughly how long the output should be caps how bad it can get, and dictation has a natural cap because output must match input size; <strong>mid-generation detection</strong>, catching a runaway while it is still being produced; and <strong>a checker</strong>, heuristics or a second model watching the output.</p>
+        <p>Worth noting for debugging: a runaway generation here and a dropped packet in stage 1.5 can both surface to the user as "garbled output." Entirely different bugs, at entirely different stages.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage-block">
+    <h3 id="stage-4">Stage 4: the text lands in your app</h3>
+    <p class="stage-tech">Back across the network, into the active text field. Desktop: clipboard paste, then restore. iOS: keyboard. Android: Flow Bubble.</p>
+
+    <details>
+      <summary>What actually happens: paste, then restore</summary>
+      <div class="det-body">
+        <p>On Mac and Windows, Flow inserts text through the clipboard: "Flow temporarily uses your clipboard to paste text and restores your previous contents after a successful paste." <a class="src" href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Wispr help center</a> The transcript goes onto the clipboard, a paste lands it in the active field, and the previous clipboard contents come back. Insertion requires an active cursor in a text field, and on Mac the Accessibility permission.</p>
+        <p>The mechanism differs by platform. On iOS, Flow operates as a keyboard, so text appears directly in the field without touching the clipboard. On Android, the Flow Bubble inserts directly into most apps, with a copy button as the fallback when direct insertion fails.</p>
+        <p>What gets inserted is plain text: numbered lists, punctuation, line breaks. Smart Formatting structures speech into text like "1. Finish the report," not into markup symbols. <a class="src" href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Wispr help center</a></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>How this stage fails, per the documentation</summary>
+      <div class="det-body">
+        <p>Every documented failure at this stage is about <strong>delivery</strong>: the text is finished and correct, and the handoff into the host application breaks.</p>
+        <table>
+          <tr><th>Failure</th><th>What happens</th></tr>
+          <tr><td>No focused text field</td><td>Flow needs an active cursor to receive text. Without one, an error chime plays and the app shows "Click a textbox and use [shortcut] to paste."</td></tr>
+          <tr><td>Missing permissions</td><td>Mac needs Accessibility permission; the iOS keyboard needs Full Access and Microphone. Without them, transcription succeeds and insertion silently cannot.</td></tr>
+          <tr><td>Apps that block programmatic input</td><td>Remote desktops, virtual desktops, banking apps, corporate apps, and password managers restrict clipboard access or third-party input by design.</td></tr>
+          <tr><td>Non-QWERTY keyboard layouts</td><td>A documented known issue: Dvorak, Colemak, and non-Latin layouts can break text field detection or cause incorrect insertion.</td></tr>
+          <tr><td>Shortcut conflicts</td><td>On Windows, conflicting hotkeys and terminal paste conventions like Ctrl+Shift+V can block the paste.</td></tr>
+        </table>
+        <p style="margin-top:14px">Sources: <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting after dictation</a> and <a href="https://docs.wisprflow.ai/articles/1621472516-flow-fails-to-detect-text-fields-or-inserts-incorrectly-on-non-qwerty-keyboard-layouts">the non-QWERTY known issue</a>.</p>
+        <p>The built-in safety net: the transcript is always on the clipboard after a dictation, so a manual paste recovers it, and history holds the text regardless.</p>
+        <p>The debugging value of this stage is isolation. Same audio, same models, different destination: if dictation lands clean in one application and fails in another, the failure is in delivery, not in capture or transcription. Flow's own local logs mirror this, treating insertion as a first-class error category with classes like <code>INSERTION / PASTE</code>, which matches the documented paste mechanism.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The gap after the pipeline</summary>
+      <div class="det-body">
+        <p>The pipeline ends at insertion, but the user's task does not. Tanay Kothari notes there is still roughly half a second between the text appearing and the user pressing enter.</p>
+        <p>The "press enter" voice command closes that gap by keeping the user inside the voice modality instead of returning them to the keyboard. Small, but it compounds: it removes the last modality switch in the loop.</p>
+        <p>Notice the symmetry across the whole document: an unmeasured gap before the pipeline, the time-to-invoke, and an unmeasured gap after it, the time-to-confirm. The instrumented 700ms sits between two moments that only exist in user behavior.</p>
+      </div>
+    </details>
+  </div>
+
+  <h2 id="challenges">The eleven open problems</h2>
+  <p class="lede">Sahaj's own list of what remains unsolved, presented in his words as "an unordered list of short, concrete problems," so the sequence carries no ranking. Most map onto a stage of the pipeline. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering, Sep 2025</a></p>
+  <table>
+    <tr><th>Challenge</th><th>Maps to</th></tr>
+    <tr><td>Optimizing latency</td><td>Whole pipeline</td></tr>
+    <tr><td>Handling ambiguous audio</td><td>Stage 2</td></tr>
+    <tr><td>Learning from corrections</td><td>On device, feeds stage 3</td></tr>
+    <tr><td>Personalized LLM formatting</td><td>Stage 3</td></tr>
+    <tr><td>Sub-audible speech</td><td>Stage 2, unsolved</td></tr>
+    <tr><td>New habit formation</td><td>Stage 0, the decision to invoke</td></tr>
+    <tr><td>Leveraging context</td><td>Stages 1.5 and 3</td></tr>
+    <tr><td>Communicating uncertainty</td><td>Stage 4 and UX</td></tr>
+    <tr><td>Multilingual code-switching</td><td>Stage 2</td></tr>
+    <tr><td>Scale</td><td>Infrastructure</td></tr>
+    <tr><td>Hardware devices</td><td>Late 2026 at the earliest</td></tr>
+  </table>
+
+  <h3 id="scale">Scale, and why uptime sits on that list</h3>
+  <p style="font-size:14.5px; color:var(--text-2)">As of September 2025, users dictated <strong>1 billion words a month</strong>, with 10x growth expected within six months, at a <strong>99.99 percent uptime</strong> requirement. <a class="src" href="https://wisprflow.ai/post/technical-challenges">Wispr engineering</a> Four nines is roughly four minutes of allowed downtime a month.</p>
+  <p style="font-size:14.5px; color:var(--text-2)">The difficulty is holding availability and speed at once. A service can always buy uptime with slowness by queueing everyone, and can always buy speed by dropping requests it cannot serve fast. Neither escape is available here. And scale does not merely enlarge the problem: systems look fine for a long time, then cross a threshold that exposes an entirely new source of latency. One CUDA kernel flag once changed performance by 25 percent under one specific load pattern, found only through observation. <a class="src" href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703</a></p>
+  <p style="font-size:14.5px; color:var(--text-2)">Related and easy to miss: Wispr runs <strong>no latency regression testing</strong>. They rely on per-event analytics, gradual rollouts, and fast detection, because these workloads are too stochastic to simulate in staging. Production telemetry and user reports are the regression test.</p>
+
+  <h3 id="roadmap">Where the pipeline is headed</h3>
+  <p style="font-size:14.5px; color:var(--text-2)">Wispr describes the progression as moving from the one habit people perform a hundred times a day, dictation, to the ten things they do ten times a day: messaging without switching context, iteratively editing a draft by voice, asking questions mid-workflow. Eventually an extension store for the long tail, once voice UX conventions are defined. <a class="src" href="https://wisprflow.ai/post/voice-dictation-to-voice-interface">Wispr engineering, Sep 2025</a></p>
+  <p style="font-size:14.5px; color:var(--text-2)">The stated bar for those actions is reliability, not capability: an assistant that messages the wrong contact even 20 percent of the time is one you stop trusting. The same trust logic that governs the decision to invoke governs every future capability.</p>
+
+  <footer>
+    <p style="margin:0 0 10px">Sources</p>
+    <ul style="margin:0; padding-left: 18px;">
+      <li><a href="https://wisprflow.ai/post/technical-challenges">Technical challenges and breakthroughs behind Flow</a>, Sahaj Garg, Sep 2025. The 700ms budget and its components, the eleven open problems, on-device personalization, scale figures.</li>
+      <li><a href="https://wisprflow.ai/post/transcription-quality">Why transcription quality fluctuates (and how to fix it)</a>, Sahaj Garg, Jan 2026. The stage 1 failure catalog and the audio-first debugging principle.</li>
+      <li><a href="https://wisprflow.ai/post/speech-recognition-challenges">The challenges and directions in speech recognition research</a>, Sahaj Garg, Sep 2025. Why audio is inherently ambiguous and context is the fix.</li>
+      <li><a href="https://wisprflow.ai/post/supporting-languages">Why supporting 100 languages is hard</a>, Sahaj Garg, Jan 2026. Engine selection, accent scoring, code-switching.</li>
+      <li><a href="https://wisprflow.ai/post/voice-dictation-to-voice-interface">From voice dictation to voice interface</a>, Sahaj Garg, Sep 2025. The roadmap and the reliability bar.</li>
+      <li><a href="https://api-docs.wisprflow.ai/websocket_api">Wispr Flow WebSocket API documentation</a>. Protocol, message sequence, audio format. Documents the developer platform.</li>
+      <li><a href="https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq">Wispr Flow security and compliance FAQ</a>. US data residency and encryption.</li>
+      <li>Wispr Flow Help Center: <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting after dictation</a>, <a href="https://docs.wisprflow.ai/articles/1621472516-flow-fails-to-detect-text-fields-or-inserts-incorrectly-on-non-qwerty-keyboard-layouts">non-QWERTY layout known issue</a>, <a href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Smart Formatting and Backtrack</a>, <a href="https://docs.wisprflow.ai/articles/3566082841-fix-missing-first-words-in-transcriptions">Missing first words</a>. The documented insertion mechanics, formatting behavior, and failure modes.</li>
+      <li><a href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten case study on Wispr Flow</a>. The P99 target, the 250ms generation target, Llama, TensorRT-LLM, Chains, autoscaling.</li>
+      <li><a href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703: Sahaj Garg on low latency AI</a>, Jan 2026. Latency definition, percentile argument, speculative decoding, the cross-region incident, the output-size rule, hallucination safeguards.</li>
+    </ul>
+  </footer>
+</div>
+
+<script>
+var S = [
+  {n:"0", k:"Invoke", t:"Stage 0: the decision to invoke", w:"Happens in your head, before any code runs", loc:"local", time:"Never measured", seg:null,
+   b:"Nothing starts until the user decides to invoke Flow and reaches for the hotkey. If past experience taught them the tool is slow or clips their first words, they hesitate and type instead. That hesitation, the time-to-invoke, is real elapsed time between wanting to say something and saying it, but no dashboard can see it because measurement starts at the keypress.",
+   note:"Wispr names this problem themselves: habit formation is one of the eleven open problems on their engineering blog. Every bad experience downstream gets paid for here, as hesitation on the next invoke."},
+  {n:"1", k:"Mic ready", t:"Stage 1: the microphone wakes up", w:"On your Mac, between the keypress and actual listening", loc:"local", time:"Varies by setup", seg:null,
+   b:"The moment you press fn, your machine has to work out which microphone is active, negotiate with Core Audio, confirm the sample rate, and open a clean stream. On a stock MacBook mic this is close to instant. On Bluetooth headsets or complex audio setups, it is slower and less consistent, and opening syllables can be clipped.",
+   note:"Sahaj's own debugging principle for this stage: it's rarely the model, it's a change in the audio. AirPods clipping, phantom Bluetooth pairing, and a too-low macOS input volume are all documented causes."},
+  {n:"1.5", k:"Server trip", t:"Stage 1.5: the trip to the server", w:"Runs while you are still talking, not after", loc:"server", time:"Mostly free", seg:0,
+   b:"A secure two-way connection opens, an auth message goes up carrying your token plus your language and which app you are in, and then audio streams in small chunks as you speak. When you stop, a commit message closes the stream and reports how many packets were sent. Only then does the 700ms clock start.",
+   note:"Nearly all of this stage is paid while you are mid-sentence, so it costs you nothing. What remains in the budget is the final chunk and the round trip."},
+  {n:"2", k:"Transcribe (ASR)", t:"Stage 2: the ASR model transcribes", w:"First of two models. ASR = automatic speech recognition", loc:"server", time:"Under 200ms", seg:1,
+   b:"The ASR model turns audio into raw words, handling your accent, your pace, and background noise. What comes out is faithful but messy: the ums, the false starts, the abandoned sentence are all still there.",
+   note:"Wispr trains its own speech models, runs them big in the cloud, and conditions them on your context and history, because hard audio is inherently ambiguous and only context resolves it. An error costs the user seconds; the network trip costs milliseconds."},
+  {n:"3", k:"Clean up (LLM)", t:"Stage 3: the LLM cleans it up", w:"Second model, runs only after the first finishes", loc:"server", time:"200 to 250ms", seg:2,
+   b:"A fine-tuned Llama takes the messy transcript and rewrites it into what you meant: punctuation, paragraph breaks, filler removed, restarts repaired. It also shapes output to the app you are in, so a Slack message keeps your tone while an email gets structure.",
+   note:"A strict rule governs this stage: output must stay similar in size to input, so the user always feels they chose the words. Speculative decoding cut this step by over half, and the savings went into running more models."},
+  {n:"4", k:"Land in app", t:"Stage 4: the text lands in your app", w:"Back across the network, into the active text field", loc:"server", time:"Remainder", seg:3,
+   b:"The finished text travels back and Flow inserts it at your cursor. On desktop that works through the clipboard: place the transcript, paste it into the active field, then restore what was on the clipboard before. This is the finish line the pipeline is measured against, and where app-specific issues concentrate, since some applications block programmatic input.",
+   note:"The pipeline ends here but the task does not: there is still about half a second before the user presses enter, and the press enter voice command closes it. An unmeasured gap before the pipeline, another after it."}
+];
+var B = [
+  {n:"Network", ms:"200ms", f:2, open:false, sub:"incl. weak connections"},
+  {n:"Speech model", ms:"200ms", f:2, open:false, sub:"ASR inference"},
+  {n:"Language model", ms:"200ms", f:2, open:false, sub:"250ms elsewhere"},
+  {n:"Unallocated", ms:"~100ms", f:1, open:true, sub:"never itemized"}
+];
+var active = 0;
+
+document.getElementById('stages').innerHTML = S.map(function(s,i){
+  return '<button data-i="'+i+'"><span class="n"><span class="dot" style="background:'+
+    (s.loc==='local'?'var(--border-2)':'var(--accent-border)')+'"></span>'+s.n+
+    '</span><span class="k">'+s.k+'</span></button>';
+}).join('');
+
+document.getElementById('budget').innerHTML = B.map(function(x,i){
+  return '<div data-b="'+i+'" class="'+(x.open?'open':'')+'" style="flex:'+x.f+'">'+x.ms+'</div>';
+}).join('');
+document.getElementById('budget-labels').innerHTML = B.map(function(x){
+  return '<div style="flex:'+x.f+'">'+x.n+'<br><span style="color:var(--text-3)">'+x.sub+'</span></div>';
+}).join('');
+
+function draw(){
+  var s = S[active];
+  document.getElementById('d-title').textContent = s.t;
+  document.getElementById('d-where').textContent = s.w;
+  document.getElementById('d-time').textContent = s.time;
+  document.getElementById('d-body').textContent = s.b;
+  document.getElementById('d-note').textContent = s.note;
+  var btns = document.querySelectorAll('#stages button');
+  for (var i = 0; i < btns.length; i++) {
+    var on = i === active;
+    btns[i].style.background = on ? 'var(--accent-bg)' : 'transparent';
+    btns[i].style.borderColor = on ? 'var(--accent-border)' : 'var(--border-2)';
+    btns[i].style.color = on ? 'var(--accent-text)' : 'var(--text)';
+  }
+  var segs = document.querySelectorAll('#budget div');
+  for (var j = 0; j < segs.length; j++) {
+    var lit = j === s.seg;
+    if (B[j].open) continue;
+    segs[j].style.background = lit ? 'var(--accent-bg)' : 'var(--surface)';
+    segs[j].style.color = lit ? 'var(--accent-text)' : 'var(--text-2)';
+  }
+}
+function setStage(i){ active = i; draw(); }
+document.querySelectorAll('#stages button').forEach(function(el){
+  el.addEventListener('click', function(){
+    var i = +el.dataset.i;
+    setStage(i);
+    snapToStage(i);
+  });
+});
+draw();
+
+var J = [
+  {from:[55,60],  to:[55,60],   dur:1400, stage:0, cap:"You have a thought and decide to invoke Flow. Nothing is running yet, nothing is measured. This is the time-to-invoke gap, and habit formation here is one of Wispr's eleven named open challenges."},
+  {from:[55,60],  to:[135,60],  dur:700,  stage:1, cap:"You press and hold the fn key."},
+  {from:[135,60], to:[205,60],  dur:600,  stage:1, cap:"Your Mac finds the active microphone, negotiates with Core Audio, and opens a clean stream. Near-instant on a stock mic, slower on Bluetooth or a complex audio setup."},
+  {from:[205,60], to:[255,60],  dur:1000, stage:2, cap:"You start talking. A WebSocket is already open and authenticated, and your audio streams up immediately, in small chunks, while you are still mid-sentence."},
+  {from:[255,60], to:[330,160], dur:900,  stage:2, cap:"Chunks keep flowing up as you speak. This is why the trip is mostly free: it happens underneath your sentence, not after it."},
+  {from:[330,160],to:[380,160], dur:600,  stage:2, cap:"You stop talking. A commit message reports the packet count so the server can confirm nothing was dropped. The 700ms clock starts now."},
+  {from:[380,160],to:[460,160], dur:1000, stage:3, cap:"The ASR model transcribes your audio into raw words. Budget: under 200ms. Conditioned on your voice, your history, and the surrounding context."},
+  {from:[460,160],to:[480,160], dur:250,  stage:3, cap:"The raw transcript hops to the second model. Physical distance here is pure added latency, which is how one bad deploy once cost every user 300 to 400ms."},
+  {from:[480,160],to:[560,160], dur:1100, stage:4, cap:"A fine-tuned Llama cleans it up: punctuation, filler removed, restarts repaired, shaped to the app you are in. Output must stay close to input size, a strict rule about authorship."},
+  {from:[560,160],to:[625,60],  dur:800,  stage:5, cap:"The finished text travels back and Flow pastes it at your cursor, restoring your clipboard afterward. Total since you stopped speaking: about 700ms at the 99th percentile."}
+];
+var CHUNKS = [
+  {start:3100, dur:900, fx:215, fy:60},
+  {start:3400, dur:900, fx:228, fy:60},
+  {start:3700, dur:900, fx:241, fy:60},
+  {start:4000, dur:900, fx:254, fy:60}
+];
+var CHUNK_TARGET = [330,160];
+var total = 0, starts = [];
+for (var k = 0; k < J.length; k++) { starts.push(total); total += J[k].dur; }
+var clockStart = starts[6];
+var clockSpan = total - clockStart;
+
+var STAGE_VIZ = [
+  {x:55,  y:60,  clock:null, cap:"Parked at the very start: the decision to invoke. Nothing is running, nothing is measured. If a user hesitates here because the tool burned them before, that lost time is invisible to every dashboard."},
+  {x:205, y:60,  clock:null, cap:"Parked at mic-on: the fn key is down and your Mac is negotiating with Core Audio to open a clean stream. On Bluetooth or a complex audio setup this is where opening syllables get clipped."},
+  {x:292, y:110, clock:null, cap:"Parked mid-flight between your machine and the server. Audio chunks stream up while you are still speaking, which is why almost none of this trip counts against the 700ms budget."},
+  {x:420, y:160, clock:"0-200 ms", cap:"Parked inside the ASR model. Your audio is becoming raw words: accent, pace, and noise handled, but the ums and false starts still in. The budget clock has just started."},
+  {x:524, y:160, clock:"200-450 ms", cap:"Parked inside the fine-tuned Llama. It is cleaning the transcript: punctuation, filler removed, restarts repaired, shaped to the app you are in."},
+  {x:625, y:60,  clock:"~700 ms", cap:"Parked at the finish: the polished text has crossed back and been pasted at your cursor, with the clipboard restored afterward. About 700ms after your last word, at the 99th percentile."}
+];
+
+var playing = false, elapsed = 0, lastTs = null, speed = 1, raf = null;
+var pulse = document.getElementById('pulse');
+var timerEl = document.getElementById('j-timer');
+var capEl = document.getElementById('j-cap');
+var playBtn = document.getElementById('play');
+var lastSeg = -1;
+
+function lerp(a, b, p) { return a + (b - a) * p; }
+
+function hideChunks() {
+  for (var c = 0; c < CHUNKS.length; c++) document.getElementById('c' + c).setAttribute('opacity', 0);
+}
+
+function snapToStage(i) {
+  playing = false; lastTs = null;
+  if (raf) { cancelAnimationFrame(raf); raf = null; }
+  playBtn.textContent = "Play";
+  hideChunks();
+  var v = STAGE_VIZ[i];
+  pulse.setAttribute('cx', v.x); pulse.setAttribute('cy', v.y); pulse.setAttribute('opacity', 1);
+  capEl.textContent = v.cap;
+  if (v.clock) { timerEl.style.opacity = 1; timerEl.textContent = v.clock; }
+  else { timerEl.style.opacity = 0; }
+}
+
+function frame(ts) {
+  if (!playing) return;
+  if (lastTs === null) lastTs = ts;
+  elapsed += (ts - lastTs) * speed;
+  lastTs = ts;
+  var t = elapsed;
+  if (t >= total) { finish(); return; }
+
+  var si = 0;
+  while (si < J.length - 1 && t >= starts[si] + J[si].dur) si++;
+  var seg = J[si];
+  var p = Math.min(1, (t - starts[si]) / seg.dur);
+  pulse.setAttribute('cx', lerp(seg.from[0], seg.to[0], p));
+  pulse.setAttribute('cy', lerp(seg.from[1], seg.to[1], p));
+  if (si === 0) pulse.setAttribute('opacity', 0.35 + 0.65 * Math.abs(Math.sin(t / 220)));
+  else pulse.setAttribute('opacity', 1);
+
+  if (si !== lastSeg) {
+    lastSeg = si;
+    capEl.textContent = seg.cap;
+    setStage(seg.stage);
+  }
+
+  for (var c = 0; c < CHUNKS.length; c++) {
+    var ch = CHUNKS[c], el = document.getElementById('c' + c);
+    if (t >= ch.start && t <= ch.start + ch.dur) {
+      var cp = (t - ch.start) / ch.dur;
+      el.setAttribute('cx', lerp(ch.fx, CHUNK_TARGET[0], cp));
+      el.setAttribute('cy', lerp(ch.fy, CHUNK_TARGET[1], cp));
+      el.setAttribute('opacity', 0.7);
+    } else {
+      el.setAttribute('opacity', 0);
+    }
+  }
+
+  if (t >= clockStart) {
+    timerEl.style.opacity = 1;
+    timerEl.textContent = Math.round(700 * Math.min(1, (t - clockStart) / clockSpan)) + " ms";
+  } else {
+    timerEl.style.opacity = 0;
+  }
+
+  raf = requestAnimationFrame(frame);
+}
+
+function finish() {
+  playing = false;
+  pulse.setAttribute('cx', 625); pulse.setAttribute('cy', 60); pulse.setAttribute('opacity', 1);
+  timerEl.style.opacity = 1; timerEl.textContent = "~700 ms";
+  capEl.textContent = "Done. A few seconds of speaking, and about 700ms after your last word the polished text is sitting at your cursor. Click any stage above to study one step.";
+  playBtn.textContent = "Replay";
+}
+
+playBtn.addEventListener('click', function() {
+  if (raf) { cancelAnimationFrame(raf); raf = null; }
+  elapsed = 0; lastTs = null; lastSeg = -1; playing = true;
+  playBtn.textContent = "Playing...";
+  raf = requestAnimationFrame(frame);
+});
+
+document.querySelectorAll('.spd button').forEach(function(b) {
+  b.addEventListener('click', function() {
+    speed = parseFloat(b.dataset.s);
+    document.querySelectorAll('.spd button').forEach(function(x) {
+      x.classList.toggle('on', x === b);
+    });
+  });
+});
+</script>
+</body>
+</html>

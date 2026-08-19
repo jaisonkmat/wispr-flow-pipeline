@@ -511,7 +511,16 @@ footer li { margin-bottom: 7px; }
       <summary>What actually happens: paste, then restore</summary>
       <div class="det-body">
         <p>On Mac and Windows, Flow inserts text through the clipboard: "Flow temporarily uses your clipboard to paste text and restores your previous contents after a successful paste." <a class="src" href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Wispr help center</a> The transcript goes onto the clipboard, a paste lands it in the active field, and the previous clipboard contents come back. Insertion requires an active cursor in a text field, and on Mac the Accessibility permission.</p>
-        <p>The mechanism differs by platform. On iOS, Flow operates as a keyboard, so text appears directly in the field without touching the clipboard. On Android, the Flow Bubble inserts directly into most apps, with a copy button as the fallback when direct insertion fails.</p>
+        <p>But paste-then-restore is the default strategy, not the only one. The documentation describes a different insertion path per destination, which means a different set of failure modes per destination:</p>
+        <table>
+          <tr><th>Destination</th><th>What Flow actually does</th></tr>
+          <tr><td>Mac / Windows apps</td><td>Clipboard paste, then restore the previous contents.</td></tr>
+          <tr><td>Windows IDE terminals</td><td>Shift+Insert instead of Ctrl+V, "when Ctrl+V isn't reliable." <a class="src" href="https://docs.wisprflow.ai/articles/6434410694-use-flow-with-cursor-vs-code-and-other-ides">IDE doc</a></td></tr>
+          <tr><td>AI coding CLIs (Claude Code, Codex)</td><td>Long dictations are split into chunks, so one dictation becomes several pastes. <a class="src" href="https://docs.wisprflow.ai/articles/6434410694-use-flow-with-cursor-vs-code-and-other-ides">IDE doc</a></td></tr>
+          <tr><td>Windows elevated apps</td><td>Paste fails unless Flow itself runs as Administrator.</td></tr>
+          <tr><td>iOS</td><td>Flow operates as a keyboard; text appears directly, no clipboard involved.</td></tr>
+          <tr><td>Android</td><td>Direct insertion via the Flow Bubble, falling back to clipboard "if insertion can't be verified," with a copy button on failure.</td></tr>
+        </table>
         <p>What gets inserted is plain text: numbered lists, punctuation, line breaks. Smart Formatting structures speech into text like "1. Finish the report," not into markup symbols. <a class="src" href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Wispr help center</a></p>
       </div>
     </details>
@@ -519,7 +528,7 @@ footer li { margin-bottom: 7px; }
     <details>
       <summary>How this stage fails, per the documentation</summary>
       <div class="det-body">
-        <p>Every documented failure at this stage is about <strong>delivery</strong>: the text is finished and correct, and the handoff into the host application breaks.</p>
+        <p>The failures at this stage come in two families. The first is <strong>text does not arrive</strong>: the transcript is finished and correct, and the handoff into the host application breaks. These failures are loud. There is an error chime, a notification, and a fix the user can perform.</p>
         <table>
           <tr><th>Failure</th><th>What happens</th></tr>
           <tr><td>No focused text field</td><td>Flow needs an active cursor to receive text. Without one, an error chime plays and the app shows "Click a textbox and use [shortcut] to paste."</td></tr>
@@ -529,8 +538,24 @@ footer li { margin-bottom: 7px; }
           <tr><td>Shortcut conflicts</td><td>On Windows, conflicting hotkeys and terminal paste conventions like Ctrl+Shift+V can block the paste.</td></tr>
         </table>
         <p style="margin-top:14px">Sources: <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting after dictation</a> and <a href="https://docs.wisprflow.ai/articles/1621472516-flow-fails-to-detect-text-fields-or-inserts-incorrectly-on-non-qwerty-keyboard-layouts">the non-QWERTY known issue</a>.</p>
-        <p>The built-in safety net: the transcript is always on the clipboard after a dictation, so a manual paste recovers it, and history holds the text regardless.</p>
+        <p>The built-in safety net is narrower than it first appears, and Wispr's own documentation hedges it three ways. The restore of your previous clipboard happens only "after a successful paste"; when a paste fails, the transcript is left on the clipboard instead and the old contents are not restored. The IDE documentation adds a warning that on macOS, "if a paste fails, your dictated text may no longer be on the clipboard." <a class="src" href="https://docs.wisprflow.ai/articles/6434410694-use-flow-with-cursor-vs-code-and-other-ides">IDE doc</a> And the restore happens "shortly after" the paste rather than instantly, with large clipboard contents such as PDFs and files not restored at all. <a class="src" href="https://docs.wisprflow.ai/articles/4816874402-troubleshooting-guide-for-snippets-pasting-only-part-of-the-text-or-code">Snippets doc</a> The reliable recovery path is not the clipboard. It is the dedicated Paste last transcript shortcut, and history, which holds the transcript regardless.</p>
         <p>The debugging value of this stage is isolation. Same audio, same models, different destination: if dictation lands clean in one application and fails in another, the failure is in delivery, not in capture or transcription. Flow's own local logs mirror this, treating insertion as a first-class error category with classes like <code>INSERTION / PASTE</code>, which matches the documented paste mechanism.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>When text arrives wrong: the silent failure class</summary>
+      <div class="det-body">
+        <p>The second family is <strong>text arrives, wrong</strong>. The paste succeeds as far as the pipeline is concerned, so nothing chimes, nothing is logged as an insertion error, and the only detector is the user. Three symptoms recur across Wispr's own fix notes, and all three appear there as real, since-fixed bugs:</p>
+        <table>
+          <tr><th>Symptom</th><th>Documented instances</th></tr>
+          <tr><td>Inserted twice</td><td>"Dictated text inserted twice." "Text inserted multiple times in Google Docs, Gmail, or other slower apps." "Text fails or duplicates when server processing takes a moment." Note the language: slower apps, processing delay. Wispr's own fix notes attribute duplication to timing.</td></tr>
+          <tr><td>Wrong place</td><td>"Text inserts into the wrong field when dictating multiple times in a row." "Text fails or inserts in the wrong place on Android 16." The mechanism is stated outright in the FAQ: "Flow pastes text into whichever app is focused when transcription finishes," so any focus change during the ~700ms round trip moves the landing zone.</td></tr>
+          <tr><td>Cut off or altered</td><td>A Mac bug where the clipboard "doesn't restore to previous contents after dictating." Placeholder text like "Search" prepended to transcriptions on Android. And truncation at the front of a dictation is usually not this stage at all: wireless mic wake-up delay, plus a small amount of audio Flow discards at the start of every recording, lives in capture. <a class="src" href="https://docs.wisprflow.ai/articles/3566082841-fix-missing-first-words-in-transcriptions">Missing first words</a></td></tr>
+        </table>
+        <p style="margin-top:14px">Sources: the fixed-bugs lists in <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting</a> and <a href="https://docs.wisprflow.ai/articles/2354103297-reliable-text-insertion-in-messaging-apps-on-android-whatsapp-telegram-messenger-signal-slack">Reliable text insertion on Android</a>, whose opening line names the family in one breath: text "landing in the wrong place, duplicating, or getting cut off." Most documented instances are Android, where insertion runs through an accessibility service rather than the desktop clipboard path, so they establish the failure class rather than the desktop mechanism.</p>
+        <p><strong>Why the destination app matters.</strong> A native Mac app takes a paste synchronously in compiled code: the keystroke arrives, the text field inserts, done. A Chromium-based app (Slack, Notion, Cursor, and anything else built on Electron, plus the browser itself) turns the keystroke into a web event handled by the app's own JavaScript, which may process the pasted content on its own schedule. Every added handoff is a place where timing can slip, which is why per-app behavior differs for the same paste. The cleanest proof that insertion is a synthesized keystroke is a documented remote-desktop limitation where pasting inserts "a single letter v" instead of the transcript: the modifier key was dropped in transit and the V arrived as a character. <a class="src" href="https://docs.wisprflow.ai/articles/7336156466-use-flow-with-remote-desktops-citrix-rdp-vdi">RDP doc</a></p>
+        <p><strong>The version dimension.</strong> This page mostly describes the architecture as if it were static, but real triage at this stage starts with what changed. Wispr maintains an article titled "Re-verify Wispr Flow permissions after updating" for exactly this: system and app updates can reset permissions or add new permission scopes, silently breaking insertion until re-granted. <a class="src" href="https://docs.wisprflow.ai/articles/5510622673-re-verify-wispr-flow-permissions-after-updating">Wispr help center</a> The destination apps auto-update themselves on their own schedules too, so "it broke after the release" always has at least three suspects: Flow's build, the destination app's build, and the OS.</p>
       </div>
     </details>
 
@@ -571,6 +596,11 @@ footer li { margin-bottom: 7px; }
   <p style="font-size:14.5px; color:var(--text-2)">The stated bar for those actions is reliability, not capability: an assistant that messages the wrong contact even 20 percent of the time is one you stop trusting. The same trust logic that governs the decision to invoke governs every future capability.</p>
 
   <footer>
+    <p style="margin:0 0 10px">Page changelog</p>
+    <ul style="margin:0 0 18px; padding-left: 18px;">
+      <li><strong>Aug 19, 2026:</strong> Corrected the clipboard-restore claim in Stage 4 against Wispr's IDE documentation: the restore is conditional on a successful paste, happens "shortly after" rather than instantly, and skips large contents. Added the silent failure class (text arrives wrong: duplicated, truncated, or in the wrong place), the per-destination insertion strategy table, the Chromium versus native distinction, and the version dimension. All sourced from Wispr's own fix notes.</li>
+      <li><strong>Aug 6, 2026:</strong> First published.</li>
+    </ul>
     <p style="margin:0 0 10px">Sources</p>
     <ul style="margin:0; padding-left: 18px;">
       <li><a href="https://wisprflow.ai/post/technical-challenges">Technical challenges and breakthroughs behind Flow</a>, Sahaj Garg, Sep 2025. The 700ms budget and its components, the eleven open problems, on-device personalization, scale figures.</li>
@@ -580,7 +610,7 @@ footer li { margin-bottom: 7px; }
       <li><a href="https://wisprflow.ai/post/voice-dictation-to-voice-interface">From voice dictation to voice interface</a>, Sahaj Garg, Sep 2025. The roadmap and the reliability bar.</li>
       <li><a href="https://api-docs.wisprflow.ai/websocket_api">Wispr Flow WebSocket API documentation</a>. Protocol, message sequence, audio format. Documents the developer platform.</li>
       <li><a href="https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq">Wispr Flow security and compliance FAQ</a>. US data residency and encryption.</li>
-      <li>Wispr Flow Help Center: <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting after dictation</a>, <a href="https://docs.wisprflow.ai/articles/1621472516-flow-fails-to-detect-text-fields-or-inserts-incorrectly-on-non-qwerty-keyboard-layouts">non-QWERTY layout known issue</a>, <a href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Smart Formatting and Backtrack</a>, <a href="https://docs.wisprflow.ai/articles/3566082841-fix-missing-first-words-in-transcriptions">Missing first words</a>. The documented insertion mechanics, formatting behavior, and failure modes.</li>
+      <li>Wispr Flow Help Center: <a href="https://docs.wisprflow.ai/articles/7971211038-fix-text-not-pasting-after-dictation">Fix text not pasting after dictation</a>, <a href="https://docs.wisprflow.ai/articles/1621472516-flow-fails-to-detect-text-fields-or-inserts-incorrectly-on-non-qwerty-keyboard-layouts">non-QWERTY layout known issue</a>, <a href="https://docs.wisprflow.ai/articles/5373093536-how-do-i-use-smart-formatting-and-backtrack">Smart Formatting and Backtrack</a>, <a href="https://docs.wisprflow.ai/articles/3566082841-fix-missing-first-words-in-transcriptions">Missing first words</a>, <a href="https://docs.wisprflow.ai/articles/6434410694-use-flow-with-cursor-vs-code-and-other-ides">Use Flow with Cursor, VS Code, and other IDEs</a>, <a href="https://docs.wisprflow.ai/articles/4816874402-troubleshooting-guide-for-snippets-pasting-only-part-of-the-text-or-code">Snippets pasting partially</a>, <a href="https://docs.wisprflow.ai/articles/2354103297-reliable-text-insertion-in-messaging-apps-on-android-whatsapp-telegram-messenger-signal-slack">Reliable text insertion on Android</a>, <a href="https://docs.wisprflow.ai/articles/5510622673-re-verify-wispr-flow-permissions-after-updating">Re-verify permissions after updating</a>, <a href="https://docs.wisprflow.ai/articles/7336156466-use-flow-with-remote-desktops-citrix-rdp-vdi">Remote desktops</a>. The documented insertion mechanics, per-destination strategies, formatting behavior, and both failure families.</li>
       <li><a href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten case study on Wispr Flow</a>. The P99 target, the 250ms generation target, Llama, TensorRT-LLM, Chains, autoscaling.</li>
       <li><a href="https://www.youtube.com/watch?v=_ZAh7n0t6zc">SE Radio 703: Sahaj Garg on low latency AI</a>, Jan 2026. Latency definition, percentile argument, speculative decoding, the cross-region incident, the output-size rule, hallucination safeguards.</li>
     </ul>

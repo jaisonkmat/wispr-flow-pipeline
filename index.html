@@ -546,7 +546,7 @@ footer li { margin-bottom: 7px; }
     <details>
       <summary>When text arrives wrong: the silent failure class</summary>
       <div class="det-body">
-        <p>The second family is <strong>text arrives, wrong</strong>. The paste succeeds as far as the pipeline is concerned, so nothing chimes, nothing is logged as an insertion error, and the only detector is the user. Three symptoms recur across Wispr's own fix notes, and all three appear there as real, since-fixed bugs:</p>
+        <p>The second family is <strong>text arrives, wrong</strong>. The paste succeeds, so the user sees no chime and no notification. Wispr's own fix notes describe these bugs with the word "silently." Whether anything registers internally is not documented; from the outside, the only visible detector is the user who notices. Three symptoms recur across Wispr's own fix notes, and all three appear there as real, since-fixed bugs:</p>
         <table>
           <tr><th>Symptom</th><th>Documented instances</th></tr>
           <tr><td>Inserted twice</td><td>"Dictated text inserted twice." "Text inserted multiple times in Google Docs, Gmail, or other slower apps." "Text fails or duplicates when server processing takes a moment." Note the language: slower apps, processing delay. Wispr's own fix notes attribute duplication to timing.</td></tr>
@@ -598,7 +598,7 @@ footer li { margin-bottom: 7px; }
   <footer>
     <p style="margin:0 0 10px">Page changelog</p>
     <ul style="margin:0 0 18px; padding-left: 18px;">
-      <li><strong>Aug 19, 2026:</strong> Corrected the clipboard-restore claim in Stage 4 against Wispr's IDE documentation: the restore is conditional on a successful paste, happens "shortly after" rather than instantly, and skips large contents. Added the silent failure class (text arrives wrong: duplicated, truncated, or in the wrong place), the per-destination insertion strategy table, the Chromium versus native distinction, and the version dimension. All sourced from Wispr's own fix notes.</li>
+      <li><strong>Aug 19, 2026:</strong> Corrected the clipboard-restore claim in Stage 4 against Wispr's IDE documentation: the restore is conditional on a successful paste, happens "shortly after" rather than instantly, and skips large contents. Added the silent failure class (text arrives wrong: duplicated, truncated, or in the wrong place), the per-destination insertion strategy table, the Chromium versus native distinction, and the version dimension. All sourced from Wispr's own fix notes. Later that day: softened a claim about internal logging that no source supports; what the fix notes document is that these failures are silent for the user.</li>
       <li><strong>Aug 6, 2026:</strong> First published.</li>
     </ul>
     <p style="margin:0 0 10px">Sources</p>
